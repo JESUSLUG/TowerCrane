@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Option A · Lavender Light. Values are RGB channels so Tailwind can apply
+ * opacity (bg-primary/20). Purple = brand and primary action; yellow = a
+ * person has to decide; red = irreversible or failed; green = all good.
+ */
+:root {
+  color-scheme: light;
+
+  --c-canvas: 247 245 252;        /* #F7F5FC page background */
+  --c-surface: 255 255 255;       /* #FFFFFF cards, inputs */
+  --c-subtle: 241 239 245;        /* #F1EFF5 hover, code, inert */
+  --c-line: 230 225 242;          /* #E6E1F2 */
+  --c-line-strong: 214 206 234;   /* #D6CEEA control borders */
+  --c-ink: 28 22 49;              /* #1C1631 text */
+  --c-muted: 94 88 115;           /* #5E5873 secondary text (5.9:1 on white) */
+
+  --c-primary: 91 33 182;         /* #5B21B6 */
+  --c-primary-hover: 76 29 149;   /* #4C1D95 */
+  --c-primary-soft: 237 231 251;  /* #EDE7FB */
+  --c-primary-ink: 76 29 149;     /* #4C1D95 text on primary-soft */
+
+  --c-attention: 250 204 21;      /* #FACC15 always with ink text */
+  --c-attention-hover: 234 179 8; /* #EAB308 */
+  --c-attention-soft: 254 246 210;/* #FEF6D2 */
+  --c-attention-line: 242 214 117;/* #F2D675 */
+  --c-attention-ink: 107 78 0;    /* #6B4E00 */
+
+  --c-danger: 180 35 24;          /* #B42318 */
+  --c-danger-hover: 154 28 18;    /* #9A1C12 */
+  --c-danger-soft: 253 236 234;   /* #FDECEA */
+  --c-danger-ink: 154 28 18;      /* #9A1C12 */
+
+  --c-success: 31 122 77;         /* #1F7A4D */
+  --c-success-soft: 230 244 236;  /* #E6F4EC */
+  --c-success-ink: 31 107 69;     /* #1F6B45 */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  @apply bg-canvas text-ink;
+}
+
+::selection {
+  @apply bg-primary/20 text-ink;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--c-muted) / 0.25);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--c-muted) / 0.45);
+  background-clip: content-box;
+}

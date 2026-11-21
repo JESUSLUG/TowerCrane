@@ -1,0 +1,11 @@
+.env
+.env.local
+*.log
+.DS_Store
+/bin
+/tmp
+
+# GitHub App private keys
+*.pem
+# Compiled binary
+/main

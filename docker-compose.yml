@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: towercrane-db
+    environment:
+      POSTGRES_USER: towercrane
+      POSTGRES_PASSWORD: towercrane
+      POSTGRES_DB: towercrane
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U towercrane"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Floci: local AWS emulator TowerCrane applies to during development.
+  # Add it in Integrations -> Cloud providers with account 000000000000,
+  # keys test/test, region us-east-1 and endpoint http://localhost:4566
+  # (http://floci:4566 when the backend itself runs in this compose).
+  floci:
+    image: floci/floci:2.3.0
+    container_name: towercrane-floci
+    ports:
+      - "4566:4566"
+    environment:
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_DEFAULT_ACCOUNT_ID: "000000000000"
+    volumes:
+      # EC2 instances and RDS databases run as real containers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: towercrane-backend
+    environment:
+      PORT: 8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: towercrane
+      DB_PASSWORD: towercrane
+      DB_NAME: towercrane
+      JWT_SECRET: your-secret-key-change-in-production
+      FRONTEND_URL: http://localhost:3000
+      WORKSPACE_DIR: /workspaces
+    ports:
+      - "8080:8080"
+    volumes:
+      - workspaces:/workspaces
+    depends_on:
+      postgres:
+        condition: service_healthy
+      floci:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: towercrane-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  workspaces:
