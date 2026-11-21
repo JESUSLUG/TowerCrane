@@ -31,7 +31,9 @@ services:
       FLOCI_DEFAULT_REGION: us-east-1
       FLOCI_DEFAULT_ACCOUNT_ID: "000000000000"
     volumes:
-      # EC2 instances and RDS databases run as real containers.
+      # EC2 instances and RDS databases run as real containers. The Docker
+      # socket gives Floci full control of Docker on this machine: local
+      # development only, never on a shared host.
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 

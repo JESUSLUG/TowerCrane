@@ -105,3 +105,26 @@ func UserTeams(ctx context.Context, accessToken string) ([]string, error) {
 		opts.Page = resp.NextPage
 	}
 }
+
+// VerifiedEmails lists the email addresses GitHub has verified for the user
+// behind token (needs the user:email scope).
+func VerifiedEmails(ctx context.Context, token string) ([]string, error) {
+	client := ghapi.NewClient(oauth2.NewClient(ctx, oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})))
+	var out []string
+	opts := &ghapi.ListOptions{PerPage: 100}
+	for {
+		emails, resp, err := client.Users.ListEmails(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range emails {
+			if e.GetVerified() {
+				out = append(out, e.GetEmail())
+			}
+		}
+		if resp.NextPage == 0 {
+			return out, nil
+		}
+		opts.Page = resp.NextPage
+	}
+}

@@ -52,7 +52,7 @@ awk 'NF {printf "%s\\n", $0}' ~/Downloads/your-app.*.private-key.pem
 ```
 
 In the cloud, keep it in a secret store (e.g. AWS Secrets Manager) and expose it to TowerCrane as that
-environment variable. `GITHUB_APP_PRIVATE_KEY_PATH` also works if the key is mounted as a file.
+environment variable. `GITHUB_APP_PRIVATE_KEY_PATH` also works if the key is mounted as a file, but prefer the variable: plans run repository code as the same user, and that code could read the file (the server's own environment is protected).
 
 `backend/.env`:
 

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type ExecutorConfig struct {
@@ -153,7 +154,46 @@ func (e *Executor) run(cmd *exec.Cmd, stdout, stderr io.Writer) error {
 		}
 	}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	return cmd.Run()
+	// Its own process group, so a timeout also stops the providers it runs.
+	newProcessGroup(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	limit := RunTimeout()
+	done := make(chan struct{})
+	timedOut := make(chan struct{})
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-time.After(limit):
+		}
+		close(timedOut)
+		// Ask nicely first (tofu releases its state lock), then stop it.
+		stopProcessGroup(cmd, false)
+		select {
+		case <-done:
+		case <-time.After(time.Minute):
+			stopProcessGroup(cmd, true)
+		}
+	}()
+	err := cmd.Wait()
+	close(done)
+	select {
+	case <-timedOut:
+		return fmt.Errorf("%s took longer than %s and was stopped (TOWERCRANE_RUN_TIMEOUT)", filepath.Base(cmd.Path), limit)
+	default:
+		return err
+	}
+}
+
+// RunTimeout is how long one tofu/terraform/terragrunt command may run:
+// TOWERCRANE_RUN_TIMEOUT (a Go duration such as 90m), 2 hours by default.
+func RunTimeout() time.Duration {
+	if d, err := time.ParseDuration(os.Getenv("TOWERCRANE_RUN_TIMEOUT")); err == nil && d > 0 {
+		return d
+	}
+	return 2 * time.Hour
 }
 
 type lockedWriter struct {

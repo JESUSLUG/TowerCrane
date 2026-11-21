@@ -2,6 +2,11 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"errors"
+	"io"
 	"fmt"
 	"net/http"
 	"os"
@@ -434,6 +439,13 @@ func (oh *OperationHandler) afterPlan(plan *db.Operation, repo *models.Repositor
 		oh.operationStore.SetPlanResult(plan)
 		return
 	}
+	sum, err := fileSHA256(plan.PlanFile)
+	if err != nil {
+		plan.PolicyNote = "Apply blocked: the saved plan could not be read: " + err.Error()
+		oh.operationStore.SetPlanResult(plan)
+		return
+	}
+	plan.PlanSHA256 = sum
 
 	if plan.Emergency {
 		plan.AwaitingConfirmation = true
@@ -568,6 +580,13 @@ func (oh *OperationHandler) applySavedPlan(apply, plan *db.Operation, ws *appWor
 		}
 	}
 
+	// The plan file is checked last, right before applying it: it must be
+	// exactly the plan that was reviewed.
+	if err := verifyPlanFile(plan); err != nil {
+		removePlanFile(plan.PlanFile)
+		oh.fail(apply, "", err.Error())
+		return
+	}
 	result, err := executor.ApplyPlan(plan.PlanFile)
 	if err != nil {
 		oh.fail(apply, "", err.Error())
@@ -632,6 +651,35 @@ func planFilePath(operationID string) string {
 	dir := filepath.Join(git.WorkspaceRoot(), "plans")
 	_ = os.MkdirAll(dir, 0o700)
 	return filepath.Join(dir, operationID+".tfplan")
+}
+
+func fileSHA256(p string) (string, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// verifyPlanFile refuses a saved plan that changed since it was made (or
+// that has no recorded hash, from an older version).
+func verifyPlanFile(plan *db.Operation) error {
+	if plan.PlanSHA256 == "" {
+		return errors.New("this plan has no recorded checksum; run a new plan and confirm that one")
+	}
+	sum, err := fileSHA256(plan.PlanFile)
+	if err != nil {
+		return fmt.Errorf("the saved plan could not be read: %w", err)
+	}
+	if subtle.ConstantTimeCompare([]byte(sum), []byte(plan.PlanSHA256)) != 1 {
+		return errors.New("the saved plan file changed since it was made, refusing to apply it; run a new plan")
+	}
+	return nil
 }
 
 func removePlanFile(p string) {

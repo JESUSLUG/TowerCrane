@@ -55,6 +55,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   setError: (error) => set({ error }),
 
   logout: () => {
+    // End the session on the server too (the token stops working everywhere).
+    const token = localStorage.getItem('auth_token')
+    if (token) {
+      fetch('/api/v1/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+    }
     localStorage.removeItem('auth_token')
     clearResourceMapCache()
     delete axios.defaults.headers.common['Authorization']

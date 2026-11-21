@@ -66,7 +66,6 @@ func SetupRoutes(router *gin.Engine, database *sql.DB, app *githubapp.App) {
 			authRoutes.GET("/login", authHandler.LoginWithGitHub)
 			authRoutes.GET("/callback", authHandler.GitHubCallback)
 			authRoutes.POST("/login-local", authHandler.LoginLocal)
-			authRoutes.POST("/logout", authHandler.Logout)
 		}
 
 		// First-run setup and invitations (public; protected by the one-time
@@ -94,6 +93,7 @@ func SetupRoutes(router *gin.Engine, database *sql.DB, app *githubapp.App) {
 
 			// User routes
 			member.GET("/user", authHandler.GetCurrentUser)
+			member.POST("/auth/logout", authHandler.Logout)
 
 			// Repository routes
 			member.GET("/repositories", repoHandler.ListConnectedRepositories)

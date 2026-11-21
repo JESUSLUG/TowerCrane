@@ -89,10 +89,12 @@ These are the pieces that exist today. Most of them have only been tried in smal
 - Cloud credentials and GitHub tokens are encrypted at rest (`TOWERCRANE_ENCRYPTION_KEY`).
 - Weak or example `JWT_SECRET` values are refused at startup, and CORS only allows `FRONTEND_URL` (plus `TOWERCRANE_CORS_ORIGINS`).
 - TowerCrane doesn't store application secrets. Infrastructure reads them from the cloud (e.g. AWS Secrets Manager), and `tofu` never inherits the server's own credentials.
-- Sign-in with GitHub checks the OAuth `state` in the browser that started it, and repeated failed password sign-ins for an email are refused for 15 minutes.
+- Sign-in with GitHub checks the OAuth `state` in the browser that started it, an invitation only works for a GitHub account with the invited email verified, and repeated failed password sign-ins for an email are refused for 15 minutes.
+- Signing out ends the session on the server (in every browser), not only in the current tab.
+- `TOWERCRANE_ENCRYPTION_KEY` is required and separate from `JWT_SECRET`, so one leaking doesn't expose the other.
 - In Docker, the backend runs as an unprivileged user, the frontend is served by nginx with security headers (CSP, no framing), and every port listens only on `127.0.0.1`. Use `DB_SSLMODE=verify-full` for a remote database.
 
-**Known limitation:** a plan or apply runs the repository's code (providers, `external` data sources, `local-exec`), and today it runs as the same OS user as the TowerCrane server. Whoever can merge to a connected repository could therefore read the server's files and environment (`JWT_SECRET`, the GitHub App key, the database password). Until runs are isolated (a separate user or container), only connect repositories whose merges you trust as much as access to the server itself, and keep `WORKSPACE_DIR` outside `/tmp`.
+**How far runs are isolated (today).** A plan or apply runs the repository's code (providers, `external` data sources, `local-exec`) as the same OS user as the TowerCrane server. TowerCrane tries to limit what that code can reach: the server process is marked non-dumpable, so its environment and memory (`JWT_SECRET`, the GitHub App key, the database password) can't be read through `/proc`; `tofu` gets a clean environment with only the cloud account's credentials; saved plans are checked against a hash before they are applied; and each command is stopped after `TOWERCRANE_RUN_TIMEOUT` (2h by default). It can still read files that user can read: other repositories' workspaces, a local `backend/.env`, a key file given in `GITHUB_APP_PRIVATE_KEY_PATH`, and, on a cloud VM, the instance metadata (its IAM role). Until each run gets its own user or container, only connect repositories whose merges you trust, pass secrets as environment variables rather than files, keep `WORKSPACE_DIR` outside `/tmp`, and block the metadata endpoint (or use IMDSv2 with a hop limit of 1).
 
 ## Quick start (local)
 
@@ -118,7 +120,7 @@ Fill in at least:
 | Variable | Value |
 |---|---|
 | `JWT_SECRET` | `openssl rand -base64 48` (32+ characters, required) |
-| `TOWERCRANE_ENCRYPTION_KEY` | `openssl rand -base64 32` |
+| `TOWERCRANE_ENCRYPTION_KEY` | `openssl rand -base64 32` (required) |
 | `TOWERCRANE_ADMINS` | your GitHub login or email (first admin) |
 | `GITHUB_APP_*` | see [docs/GITHUB_APP_SETUP.md](./docs/GITHUB_APP_SETUP.md) |
 | `GITHUB_CLIENT_*` (optional) | GitHub sign-in, see [docs/GITHUB_OAUTH_SETUP.md](./docs/GITHUB_OAUTH_SETUP.md) |

@@ -12,11 +12,19 @@ import (
 	"github.com/JESUSLUG/TowerCrane/backend/internal/api"
 	"github.com/JESUSLUG/TowerCrane/backend/internal/db"
 	"github.com/JESUSLUG/TowerCrane/backend/internal/githubapp"
+	"github.com/JESUSLUG/TowerCrane/backend/internal/harden"
+	"github.com/JESUSLUG/TowerCrane/backend/internal/secrets"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Plans run repository code as this same OS user: keep it from reading
+	// this process's environment and memory (see internal/harden).
+	if err := harden.Process(); err != nil {
+		log.Fatalf("Refusing to start: could not protect the process: %v", err)
+	}
+
 	// Load environment variables
 	godotenv.Load()
 
@@ -28,6 +36,11 @@ func main() {
 
 	// A guessable JWT_SECRET lets anyone sign in as any user, admins included.
 	if err := auth.CheckJWTSecret(); err != nil {
+		log.Fatalf("Refusing to start: %v", err)
+	}
+
+	// Cloud credentials and GitHub tokens are encrypted with their own key.
+	if err := secrets.Check(); err != nil {
 		log.Fatalf("Refusing to start: %v", err)
 	}
 

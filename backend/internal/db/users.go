@@ -52,6 +52,8 @@ func (s *UserStore) CreateTables() error {
 		// Set when the user joined through an invitation: they may sign in
 		// even if they aren't in a connected GitHub org.
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS invited BOOLEAN NOT NULL DEFAULT FALSE`,
+		// Sessions (JWTs) issued before this moment are refused (sign-out).
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_revoked_at TIMESTAMP`,
 		`ALTER TABLE users ALTER COLUMN github_id TYPE BIGINT`,
 	} {
 		if _, err := s.db.Exec(m); err != nil {
@@ -492,4 +494,21 @@ func (s *UserStore) IsAdminGitHubLogin(login string) bool {
 	}
 	sources, err := s.GetRoleSources(id)
 	return err == nil && sources.Effective() == auth.RoleAdmin
+}
+
+// SessionsRevokedAt is when the user last signed out (zero if never): JWTs
+// issued before it are no longer accepted.
+func (s *UserStore) SessionsRevokedAt(userID string) (time.Time, error) {
+	var t sql.NullTime
+	if err := s.db.QueryRow(`SELECT sessions_revoked_at FROM users WHERE id = $1`, userID).Scan(&t); err != nil {
+		return time.Time{}, err
+	}
+	return t.Time, nil
+}
+
+// RevokeSessions signs the user out everywhere: every JWT issued until now
+// stops working. Stored with second precision, like a JWT's iat.
+func (s *UserStore) RevokeSessions(userID string) error {
+	_, err := s.db.Exec(`UPDATE users SET sessions_revoked_at = $2 WHERE id = $1`, userID, time.Now().UTC().Truncate(time.Second))
+	return err
 }

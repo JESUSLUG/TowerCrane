@@ -35,6 +35,9 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("user_id", claims.Subject)
 		c.Set("github_login", claims.GitHubLogin)
 		c.Set("github_id", claims.GitHubID)
+		if claims.IssuedAt != nil {
+			c.Set("issued_at", claims.IssuedAt.Time)
+		}
 		c.Next()
 	}
 }
@@ -47,6 +50,18 @@ func RoleMiddleware(userStore *db.UserStore) gin.HandlerFunc {
 		sources, err := userStore.GetRoleSources(c.GetString("user_id"))
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			c.Abort()
+			return
+		}
+		// A session from before the user signed out is over.
+		revoked, err := userStore.SessionsRevokedAt(c.GetString("user_id"))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			c.Abort()
+			return
+		}
+		if issued := c.GetTime("issued_at"); !revoked.IsZero() && (issued.IsZero() || issued.Before(revoked)) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "session ended, sign in again"})
 			c.Abort()
 			return
 		}

@@ -1,10 +1,11 @@
 // Package secrets encrypts credentials TowerCrane stores (e.g. cloud access
 // keys) with AES-256-GCM.
 //
-// The key comes from TOWERCRANE_ENCRYPTION_KEY (32 bytes, base64). If it is
-// unset, a key is derived from JWT_SECRET so development setups work, and a
-// warning is logged: rotating JWT_SECRET would then make stored secrets
-// unreadable, so production deployments should set a dedicated key.
+// The key comes from TOWERCRANE_ENCRYPTION_KEY (32 bytes, base64), and is
+// required: it is kept apart from JWT_SECRET so leaking one doesn't expose
+// the other. Older versions derived the key from JWT_SECRET when it was
+// unset; values encrypted that way can still be decrypted (legacy), and new
+// values always use TOWERCRANE_ENCRYPTION_KEY.
 package secrets
 
 import (
@@ -24,6 +25,7 @@ import (
 var (
 	once    sync.Once
 	aead    cipher.AEAD
+	legacy  cipher.AEAD // key derived from JWT_SECRET by older versions
 	initErr error
 )
 
@@ -37,22 +39,32 @@ func load() {
 		}
 		key = k
 	} else {
-		secret := os.Getenv("JWT_SECRET")
-		if secret == "" {
-			initErr = errors.New("set TOWERCRANE_ENCRYPTION_KEY (or at least JWT_SECRET) to store secrets")
-			return
-		}
-		log.Printf("WARNING: TOWERCRANE_ENCRYPTION_KEY is not set; deriving the secrets key from JWT_SECRET")
-		sum := sha256.Sum256([]byte("towercrane-secrets:" + secret))
-		key = sum[:]
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		initErr = err
+		initErr = errors.New("TOWERCRANE_ENCRYPTION_KEY is required (openssl rand -base64 32)")
 		return
 	}
-	aead, initErr = cipher.NewGCM(block)
+
+	aead, initErr = newAEAD(key)
+	if initErr != nil {
+		return
+	}
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		sum := sha256.Sum256([]byte("towercrane-secrets:" + secret))
+		legacy, _ = newAEAD(sum[:])
+	}
+}
+
+func newAEAD(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+// Check reports whether secrets can be encrypted (the key is set and valid).
+func Check() error {
+	once.Do(load)
+	return initErr
 }
 
 // Encrypt returns base64(nonce || ciphertext).
@@ -79,6 +91,12 @@ func Decrypt(encoded string) (string, error) {
 		return "", errors.New("malformed encrypted secret")
 	}
 	plain, err := aead.Open(nil, data[:aead.NonceSize()], data[aead.NonceSize():], nil)
+	if err != nil && legacy != nil {
+		if p, lerr := legacy.Open(nil, data[:legacy.NonceSize()], data[legacy.NonceSize():], nil); lerr == nil {
+			log.Printf("secrets: decrypted a value stored with the old JWT_SECRET-derived key; save it again to re-encrypt it")
+			plain, err = p, nil
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt secret (was the encryption key changed?): %w", err)
 	}

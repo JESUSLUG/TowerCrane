@@ -89,7 +89,7 @@ func (h *AuthHandler) GitHubCallback(c *gin.Context) {
 	user, githubToken, err := h.oauth.ExchangeCode(ctx, code)
 	if err != nil {
 		log.Printf("Failed to exchange code: %v", err)
-		deny("GitHub authentication failed")
+		deny("github_failed")
 		return
 	}
 	login := user.GitHubLogin.String
@@ -99,14 +99,27 @@ func (h *AuthHandler) GitHubCallback(c *gin.Context) {
 	// account), and invitation links pass "invite:<token>" as the purpose.
 	nonce, purpose, ok := strings.Cut(state, "~")
 	if !ok || len(nonce) < 16 {
-		deny("Sign-in expired, please try again")
+		deny("state_invalid")
 		return
 	}
 	var invitation *db.Invitation
 	if token, ok := strings.CutPrefix(purpose, "invite:"); ok {
 		inv, err := h.integrations.GetOpenInvitation(token)
 		if err != nil {
-			deny("This invitation is invalid, expired or was already used")
+			deny("invitation_invalid")
+			return
+		}
+		// An invitation is for one person: their GitHub account must have
+		// the invited email, verified.
+		emails, err := auth.VerifiedEmails(ctx, githubToken)
+		if err != nil {
+			log.Printf("Failed to read the verified emails of %s: %v", login, err)
+			deny("github_failed")
+			return
+		}
+		if !hasEmail(emails, inv.Email) {
+			log.Printf("Invitation for %s refused for GitHub user %s: email not verified on that account", inv.Email, login)
+			deny("invitation_email")
 			return
 		}
 		invitation = inv
@@ -125,21 +138,21 @@ func (h *AuthHandler) GitHubCallback(c *gin.Context) {
 	}
 	if !allowed {
 		log.Printf("Sign-in denied for GitHub user %s: not in a connected org and not invited", login)
-		deny("Your GitHub account is not a member of an organization connected to TowerCrane. Ask an admin for an invitation.")
+		deny("not_member")
 		return
 	}
 
 	dbUser, err := h.userStore.GetOrCreateUser(user)
 	if err != nil {
 		log.Printf("Failed to create/get user: %v", err)
-		deny("Failed to create your account")
+		deny("account_failed")
 		return
 	}
 
 	if invitation != nil {
 		if err := h.consumeInvitation(invitation, dbUser.ID); err != nil {
 			log.Printf("Failed to accept invitation for %s: %v", login, err)
-			deny("This invitation was already used")
+			deny("invitation_used")
 			return
 		}
 	}
@@ -155,7 +168,7 @@ func (h *AuthHandler) GitHubCallback(c *gin.Context) {
 	token, _, err := auth.GenerateJWT(dbUser)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
-		deny("Failed to sign you in")
+		deny("signin_failed")
 		return
 	}
 
@@ -333,7 +346,13 @@ func (h *AuthHandler) LoginLocal(c *gin.Context) {
 	})
 }
 
+// Logout ends every session of the caller (all browsers): the JWTs issued
+// so far stop being accepted.
 func (h *AuthHandler) Logout(c *gin.Context) {
+	if err := h.userStore.RevokeSessions(c.GetString("user_id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to sign out"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
 }
 
@@ -361,4 +380,13 @@ func userToDTO(user *auth.User) UserResponseDTO {
 		Name:        user.Name,
 		AvatarURL:   avatarURL,
 	}
+}
+
+func hasEmail(list []string, email string) bool {
+	for _, e := range list {
+		if strings.EqualFold(strings.TrimSpace(e), strings.TrimSpace(email)) {
+			return true
+		}
+	}
+	return false
 }

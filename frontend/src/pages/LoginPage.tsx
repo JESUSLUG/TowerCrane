@@ -9,6 +9,19 @@ import { Alert } from '../components/ui/Alert'
 import { Field, Input } from '../components/ui/Field'
 import { GithubIcon } from '../components/ui/GithubIcon'
 
+// Sign-in errors the backend sends back from GitHub (?error=<code>). Only
+// these known messages are shown, never text from the URL itself.
+const SIGN_IN_ERRORS: Record<string, string> = {
+  github_failed: 'GitHub authentication failed. Please try again.',
+  state_invalid: 'Sign-in expired, please try again.',
+  invitation_invalid: 'This invitation is invalid, expired or was already used.',
+  invitation_email: 'This invitation is for another email. Sign in with a GitHub account that has that email verified.',
+  invitation_used: 'This invitation was already used.',
+  not_member: 'Your GitHub account is not a member of an organization connected to TowerCrane. Ask an admin for an invitation.',
+  account_failed: 'Failed to create your account.',
+  signin_failed: 'Failed to sign you in.',
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
@@ -19,7 +32,8 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const githubError = searchParams.get('error')
+  const errorCode = searchParams.get('error')
+  const githubError = errorCode ? SIGN_IN_ERRORS[errorCode] ?? 'Sign-in with GitHub failed.' : ''
 
   // First run: no accounts exist yet, so send the operator to the setup page.
   useEffect(() => {

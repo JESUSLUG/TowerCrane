@@ -34,6 +34,9 @@ type Operation struct {
 	AwaitingConfirmation bool   `json:"awaiting_confirmation"`
 	PolicyNote           string `json:"policy_note,omitempty"`
 	PlanFile             string `json:"-"`
+	// PlanSHA256 is the saved plan file's hash when it was made: the file
+	// sits where other runs could reach it, so it is checked before applying.
+	PlanSHA256 string `json:"-"`
 	// Applies created from a confirmed plan point back to it.
 	SourcePlanID string `json:"source_plan_id,omitempty"`
 
@@ -88,6 +91,7 @@ func (os *OperationStore) CreateTables() error {
 		`ALTER TABLE operations ADD COLUMN IF NOT EXISTS awaiting_confirmation BOOLEAN NOT NULL DEFAULT FALSE`,
 		`ALTER TABLE operations ADD COLUMN IF NOT EXISTS policy_note TEXT`,
 		`ALTER TABLE operations ADD COLUMN IF NOT EXISTS plan_file TEXT`,
+		`ALTER TABLE operations ADD COLUMN IF NOT EXISTS plan_sha256 VARCHAR(64)`,
 		`ALTER TABLE operations ADD COLUMN IF NOT EXISTS source_plan_id UUID`,
 		`ALTER TABLE operations ADD COLUMN IF NOT EXISTS application VARCHAR(63)`,
 		// Instance names (app@group) can be longer than 63 characters.
@@ -106,14 +110,14 @@ const operationColumns = `id, repository_id, user_id, type, status, environment,
 	COALESCE(commit_sha, ''), COALESCE(plan, ''), COALESCE(log, ''), COALESCE(error, ''),
 	emergency, has_changes, awaiting_confirmation, COALESCE(policy_note, ''), COALESCE(plan_file, ''),
 	COALESCE(source_plan_id::text, ''), created_at, started_at, completed_at,
-	COALESCE(source_commit_sha, COALESCE(commit_sha, ''))`
+	COALESCE(source_commit_sha, COALESCE(commit_sha, '')), COALESCE(plan_sha256, '')`
 
 func scanOperation(row interface{ Scan(...any) error }) (*Operation, error) {
 	op := &Operation{}
 	err := row.Scan(&op.ID, &op.RepositoryID, &op.UserID, &op.Type, &op.Status, &op.Environment, &op.Application, &op.WorkingDir,
 		&op.CommitSHA, &op.Plan, &op.Log, &op.Error,
 		&op.Emergency, &op.HasChanges, &op.AwaitingConfirmation, &op.PolicyNote, &op.PlanFile,
-		&op.SourcePlanID, &op.CreatedAt, &op.StartedAt, &op.CompletedAt, &op.SourceCommitSHA)
+		&op.SourcePlanID, &op.CreatedAt, &op.StartedAt, &op.CompletedAt, &op.SourceCommitSHA, &op.PlanSHA256)
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +250,8 @@ func (os *OperationStore) SetPlanResult(op *Operation) error {
 		}
 	}
 	if _, err := tx.Exec(`UPDATE operations SET has_changes = $1, awaiting_confirmation = $2,
-		policy_note = NULLIF($3, ''), plan_file = NULLIF($4, '') WHERE id = $5`,
-		op.HasChanges, op.AwaitingConfirmation, op.PolicyNote, op.PlanFile, op.ID); err != nil {
+		policy_note = NULLIF($3, ''), plan_file = NULLIF($4, ''), plan_sha256 = NULLIF($6, '') WHERE id = $5`,
+		op.HasChanges, op.AwaitingConfirmation, op.PolicyNote, op.PlanFile, op.ID, op.PlanSHA256); err != nil {
 		return err
 	}
 	return tx.Commit()
