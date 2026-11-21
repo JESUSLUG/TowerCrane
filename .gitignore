@@ -1,0 +1,16 @@
+# Secrets: never commit them
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Terraform / OpenTofu / Terragrunt local files (state can hold secrets)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terragrunt-cache/
+*.tfplan
+crash.log
+
+.DS_Store

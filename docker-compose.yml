@@ -8,8 +8,9 @@ services:
       POSTGRES_USER: towercrane
       POSTGRES_PASSWORD: towercrane
       POSTGRES_DB: towercrane
+    # Only reachable from this machine.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,7 +27,7 @@ services:
     image: floci/floci:2.3.0
     container_name: towercrane-floci
     ports:
-      - "4566:4566"
+      - "127.0.0.1:4566:4566"
     environment:
       FLOCI_DEFAULT_REGION: us-east-1
       FLOCI_DEFAULT_ACCOUNT_ID: "000000000000"
@@ -47,11 +48,13 @@ services:
       DB_USER: towercrane
       DB_PASSWORD: towercrane
       DB_NAME: towercrane
-      JWT_SECRET: your-secret-key-change-in-production
+      # Required (the backend refuses to start without a random 32+ character one): export JWT_SECRET="$(openssl rand -base64 48)"
+      JWT_SECRET: ${JWT_SECRET:-}
+      TOWERCRANE_ENCRYPTION_KEY: ${TOWERCRANE_ENCRYPTION_KEY:-}
       FRONTEND_URL: http://localhost:3000
       WORKSPACE_DIR: /workspaces
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - workspaces:/workspaces
     depends_on:
@@ -67,7 +70,7 @@ services:
       dockerfile: Dockerfile
     container_name: towercrane-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
     restart: unless-stopped

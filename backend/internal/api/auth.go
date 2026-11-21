@@ -94,9 +94,16 @@ func (h *AuthHandler) GitHubCallback(c *gin.Context) {
 	}
 	login := user.GitHubLogin.String
 
-	// Invitation links pass their token through the OAuth state.
+	// The state is "<nonce>~<purpose>": the frontend checks the nonce when
+	// the sign-in comes back (so nobody can sign a browser into their own
+	// account), and invitation links pass "invite:<token>" as the purpose.
+	nonce, purpose, ok := strings.Cut(state, "~")
+	if !ok || len(nonce) < 16 {
+		deny("Sign-in expired, please try again")
+		return
+	}
 	var invitation *db.Invitation
-	if token, ok := strings.CutPrefix(state, "invite:"); ok {
+	if token, ok := strings.CutPrefix(purpose, "invite:"); ok {
 		inv, err := h.integrations.GetOpenInvitation(token)
 		if err != nil {
 			deny("This invitation is invalid, expired or was already used")
@@ -152,7 +159,8 @@ func (h *AuthHandler) GitHubCallback(c *gin.Context) {
 		return
 	}
 
-	redirectURL := fmt.Sprintf("%s/auth/callback?token=%s", frontendURL, url.QueryEscape(token))
+	// In the fragment, so the token never reaches server logs or a Referer.
+	redirectURL := fmt.Sprintf("%s/auth/callback#token=%s&state=%s", frontendURL, url.QueryEscape(token), url.QueryEscape(nonce))
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
@@ -281,9 +289,15 @@ func (h *AuthHandler) LoginLocal(c *gin.Context) {
 		return
 	}
 
+	if !loginAttempts.allow(req.Email) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many failed sign-ins, try again in a few minutes"})
+		return
+	}
+
 	// Get user by email
 	user, err := h.userStore.GetUserByEmail(req.Email)
 	if err != nil {
+		loginAttempts.fail(req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
@@ -297,9 +311,12 @@ func (h *AuthHandler) LoginLocal(c *gin.Context) {
 
 	// Verify password
 	if !auth.VerifyPassword(passwordHash, req.Password) {
+		loginAttempts.fail(req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 		return
 	}
+
+	loginAttempts.reset(req.Email)
 
 	// Generate JWT
 	token, expiresAt, err := auth.GenerateJWT(user)
