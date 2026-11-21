@@ -90,6 +90,7 @@ These are the pieces that exist today. Most of them have only been tried in smal
 - Weak or example `JWT_SECRET` values are refused at startup, and CORS only allows `FRONTEND_URL` (plus `TOWERCRANE_CORS_ORIGINS`).
 - TowerCrane doesn't store application secrets. Infrastructure reads them from the cloud (e.g. AWS Secrets Manager), and `tofu` never inherits the server's own credentials.
 - Sign-in with GitHub checks the OAuth `state` in the browser that started it, and repeated failed password sign-ins for an email are refused for 15 minutes.
+- In Docker, the backend runs as an unprivileged user, the frontend is served by nginx with security headers (CSP, no framing), and every port listens only on `127.0.0.1`. Use `DB_SSLMODE=verify-full` for a remote database.
 
 **Known limitation:** a plan or apply runs the repository's code (providers, `external` data sources, `local-exec`), and today it runs as the same OS user as the TowerCrane server. Whoever can merge to a connected repository could therefore read the server's files and environment (`JWT_SECRET`, the GitHub App key, the database password). Until runs are isolated (a separate user or container), only connect repositories whose merges you trust as much as access to the server itself, and keep `WORKSPACE_DIR` outside `/tmp`.
 

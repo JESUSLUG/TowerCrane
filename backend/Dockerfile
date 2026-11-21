@@ -27,6 +27,10 @@ COPY --from=tofu /usr/local/bin/tofu /usr/local/bin/tofu
 COPY --from=terragrunt /usr/local/bin/terragrunt /usr/local/bin/terragrunt
 WORKDIR /app
 COPY --from=builder /app/towercrane .
+# Run as an unprivileged user (plans and applies run the repositories' code).
+RUN addgroup -S towercrane && adduser -S -G towercrane -h /home/towercrane towercrane \
+ && mkdir -p /workspaces && chown towercrane:towercrane /workspaces
+USER towercrane
 
 EXPOSE 8080
 CMD ["./towercrane"]

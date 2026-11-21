@@ -113,7 +113,19 @@ func main() {
 
 	// Initialize Gin router
 	router := gin.Default()
+	// TowerCrane doesn't sit behind a proxy it should trust X-Forwarded-For
+	// from; set TOWERCRANE_TRUSTED_PROXIES (comma-separated) if it does.
+	var proxies []string
+	for _, p := range strings.Split(os.Getenv("TOWERCRANE_TRUSTED_PROXIES"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			proxies = append(proxies, p)
+		}
+	}
+	if err := router.SetTrustedProxies(proxies); err != nil {
+		log.Fatalf("Invalid TOWERCRANE_TRUSTED_PROXIES: %v", err)
+	}
 
+	router.Use(securityHeaders())
 	// Enable CORS
 	router.Use(corsMiddleware())
 
@@ -127,13 +139,36 @@ func main() {
 	}
 
 	log.Printf("🚀 TowerCrane backend running on port %s", port)
-	router.Run(":" + port)
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		log.Fatalf("Server stopped: %v", err)
+	}
 }
 
 // corsMiddleware lets only the TowerCrane frontend call the API from a
 // browser: FRONTEND_URL, plus TOWERCRANE_CORS_ORIGINS (comma-separated) for
 // extra origins. The session travels in the Authorization header (no
 // cookies), so credentials are never allowed cross-origin.
+// securityHeaders: the API only serves JSON; tell browsers not to sniff it,
+// frame it or cache it.
+func securityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cache-Control", "no-store")
+		c.Next()
+	}
+}
+
 func corsMiddleware() gin.HandlerFunc {
 	allowed := map[string]bool{}
 	for _, o := range append([]string{os.Getenv("FRONTEND_URL")}, strings.Split(os.Getenv("TOWERCRANE_CORS_ORIGINS"), ",")...) {
